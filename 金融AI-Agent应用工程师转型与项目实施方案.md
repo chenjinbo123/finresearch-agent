@@ -6,6 +6,8 @@
 >
 > 本文基于收集到的 AI Agent、LLM 应用、AI 应用全栈、金融 AI 等职位描述整理。职位描述通常是理想候选人能力的并集，不要求转型初期全部满足；本方案优先覆盖初中级至中级 AI 应用岗位的核心要求。
 
+> 技术路线更新（2026-10-30）：参照 Vibe-Trading，后端统一使用 Python + FastAPI，Web 使用 React + TypeScript + Vite，部署使用 Docker。不建设 Spring Boot／Java 业务层。完整系统的阶段顺序以[分阶段学习与实施路线](金融Agent完整系统分阶段学习与实施路线.md)为准；本文 16 周安排保留为早期研究工作台里程碑参考。
+
 ## 1. 职业定位与边界
 
 ### 1.1 推荐的目标岗位
@@ -16,13 +18,13 @@
 - 大模型应用工程师 / LLM 应用工程师
 - Agent 应用开发工程师 / 智能体开发工程师
 - Python AI 应用后端工程师
-- Java AI 应用工程师 / Spring AI 工程师
+- Python 金融 AI 后端工程师
 - AI 应用全栈工程师（选择性投递，偏中小公司和创业团队）
 
 推荐在简历中的定位：
 
 ```text
-金融 AI 应用工程师（Java/Kotlin + Python）
+金融 AI 应用工程师（Python，具备 Java/Kotlin 与 Android 开发背景）
 具备 Agent、RAG、MCP、企业系统集成、评测与端到端交付能力。
 ```
 
@@ -64,7 +66,7 @@ Android 不是丢弃项，而是差异化能力。它证明了移动端产品交
 | 评测与 Harness | Evals、测试集、回归、Trace、Prompt 版本、效果优化 | 用数据验证 Agent 是否真的有用且不回归 | P0 |
 | 稳定性与安全 | 权限、审计、Prompt Injection、防幻觉、异常处理、限流、重试、幂等 | 防止越权、错误执行、成本失控和生产事故 | P0 |
 | 数据与缓存 | PostgreSQL、MySQL、MongoDB、Redis、pgvector / Milvus | 存储业务数据、任务状态、缓存与向量索引 | P1 |
-| 全栈交付 | TypeScript、React、Next.js、流式 UI、执行状态可视化 | 让用户能使用、能理解、敢确认 Agent 的结果 | P1 |
+| 全栈交付 | TypeScript、React、Vite、流式 UI、执行状态可视化 | 让用户能使用、能理解、敢确认 Agent 的结果 | P1 |
 | 运维工程 | Docker、K8s、CI/CD、监控、日志、SLA | 让系统可部署、可观测、可扩展 | P1 |
 | 多 Agent / 高阶推理 | CrewAI、AutoGen、Router、Supervisor、Reflection、ToT | 解决极复杂或多角色任务，但复杂度和成本较高 | P2 |
 
@@ -81,7 +83,7 @@ Android 不是丢弃项，而是差异化能力。它证明了移动端产品交
 
 | 当前经验 | 转型后对应能力 |
 | --- | --- |
-| Java / Kotlin、接口请求、序列化 | Spring Boot、FastAPI、模型与业务接口集成 |
+| Java / Kotlin、接口请求、序列化 | Python/FastAPI、模型与业务接口集成 |
 | 并发、性能、网络失败处理 | 流式响应、限流、超时、重试、熔断和降级 |
 | App 生命周期与状态管理 | Agent 会话、任务状态、Checkpoint 与恢复 |
 | 金融行情、公告、股票池、风险提示 | 金融 Agent 场景设计、数据时效与可解释性 |
@@ -100,7 +102,7 @@ Android 不是丢弃项，而是差异化能力。它证明了移动端产品交
 - PostgreSQL：表设计、索引、事务、分页、JSONB、迁移；同时了解 `pgvector`。
 - Redis：缓存、限流、会话、分布式锁的基本使用和失效策略。
 - Docker Compose：本地启动多服务、环境变量、数据卷、健康检查。
-- Java / Spring Boot：重点补数据库、JWT、RBAC、缓存、异步任务和企业 API 集成，不必一开始学习复杂微服务全家桶。
+- Python 业务后端：补齐数据库、JWT、RBAC、缓存、异步任务和企业 API 集成，与 Agent 共用 Python 技术栈。
 
 #### B. LLM 应用基础
 
@@ -139,9 +141,9 @@ Android 不是丢弃项，而是差异化能力。它证明了移动端产品交
 
 ### 3.2 P1：完成核心项目后再加强
 
-- TypeScript + React + Next.js：能独立完成对话页、知识库管理页、评测/追踪后台。
-- Spring AI：了解 Java 企业服务如何接模型、向量库和工具调用。
-- 异步队列：Celery / RQ / Dramatiq、或 Java 中的消息队列，用于长文档解析与向量化。
+- TypeScript + React + Vite：能独立完成对话页、知识库管理页、评测/追踪后台。
+- Python 服务集成：通过受控 HTTP API 或 MCP 接入外部业务能力。
+- 异步队列：Python 后台 Worker，按需求选择 Celery / RQ / Dramatiq，用于长文档解析与向量化。
 - OpenTelemetry：供应商无关的 Trace、Metrics、Logs。
 - Docker、CI/CD、基础 Linux；K8s 只需理解部署概念，项目第一版不强制上。
 
@@ -220,7 +222,7 @@ Android 不是丢弃项，而是差异化能力。它证明了移动端产品交
 Agent 创建提醒提案
 -> 前端展示公司、日期、提醒内容和风险项
 -> 用户点击确认
--> Java 业务服务再次校验登录用户、权限和参数
+-> Python 业务服务再次校验登录用户、权限和参数
 -> 创建提醒并写入审计记录
 ```
 
@@ -238,44 +240,35 @@ MVP 功能：
 - 两个查询 MCP Server、一个受控提醒 MCP Server。
 - 提醒提案、用户确认、审计日志。
 - 自动化评测、模型调用 Trace、Token 与延迟统计。
-- React/Next.js Web 工作台；Android 仅作为最后的可选入口。
+- React/Vite Web 工作台；Android 仅作为最后的可选入口。
 
 ## 5. 推荐架构
 
 ### 5.1 总体架构
 
 ```text
-┌───────────────────────────────────────────────────────────────────┐
-│ React / Next.js 工作台                                             │
-│ 对话、流式输出、引用卡片、执行进度、知识库、评测、确认弹窗          │
-└───────────────────────────────┬───────────────────────────────────┘
-                                │ HTTPS / SSE
-┌───────────────────────────────▼───────────────────────────────────┐
-│ Spring Boot 业务网关                                               │
-│ JWT、RBAC、用户、会话、提醒、审计、Redis 限流、业务 API             │
-└───────────────────────────────┬───────────────────────────────────┘
-                                │ 内部 API / 事件
-┌───────────────────────────────▼───────────────────────────────────┐
-│ Python FastAPI Agent 服务                                          │
-│ LangGraph、LLM、结构化输出、RAG、MCP Client、Eval Harness、SSE     │
-└───────┬───────────────────┬────────────────────┬──────────────────┘
-        │                   │                    │
-┌───────▼────────┐ ┌────────▼─────────┐ ┌────────▼─────────────────┐
-│ 知识检索 MCP    │ │ 财务数据 MCP      │ │ 提醒提案 MCP             │
-│ 文档/引用查询   │ │ 指标/比较查询     │ │ 仅生成提案，不直接执行    │
-└───────┬────────┘ └────────┬─────────┘ └──────────────────────────┘
-        │                   │
-┌───────▼───────────────────▼──────────────────────────────────────┐
-│ PostgreSQL + pgvector | Redis | 文档文件存储 | Langfuse/OTel        │
-└───────────────────────────────────────────────────────────────────┘
+React + TypeScript + Vite 工作台
+  对话、引用、进度、知识库、评测、确认弹窗
+                    ↓ HTTPS / SSE
+Python / FastAPI 统一后端
+├─ 业务模块：JWT、RBAC、用户、会话、提醒、审批、审计
+├─ Agent 模块：LLM、工作流、RAG、工具、MCP Client、评测
+└─ Worker：后台任务、文档处理、持久进度与恢复
+                    ↓
+Python 工具 / MCP Server
+├─ 知识检索
+├─ 财务数据查询与计算
+└─ 提醒提案，确认后由业务模块执行
+                    ↓
+PostgreSQL + pgvector / 文件存储 / 按需 Redis / 观测
 ```
 
 ### 5.2 组件职责与技术选型
 
 | 组件 | 推荐技术 | 职责 | 为什么这样拆分 |
 | --- | --- | --- | --- |
-| Web 工作台 | TypeScript、React、Next.js | 用户界面、SSE、引用和执行状态展示 | 满足全栈 JD，但不把项目重心放在页面 |
-| 业务网关 | Java 17+、Spring Boot、Spring Security | 鉴权、RBAC、提醒、审计、对接企业业务 | 复用 Java/Kotlin 背景，体现企业集成能力 |
+| Web 工作台 | TypeScript、React、Vite | 用户界面、SSE、引用和执行状态展示 | 满足全栈 JD，但不把项目重心放在页面 |
+| 业务模块 | Python、FastAPI、Pydantic | 鉴权、RBAC、提醒、审计、对接企业业务 | 与 Agent 共用 Python 后端，模块内明确业务边界 |
 | Agent 服务 | Python 3.11+、FastAPI、Pydantic、LangGraph | LLM 编排、RAG、工具调用、评测 | Python AI 生态成熟，适合快速实现 |
 | 向量检索 | PostgreSQL + pgvector | 文档元数据、业务数据与向量查询 | MVP 只维护一种主要数据库，部署简单 |
 | 缓存 | Redis | 限流、会话/检索缓存、短期任务状态 | 贴合企业后端高频要求 |
@@ -284,14 +277,14 @@ MVP 功能：
 
 ### 5.3 服务边界
 
-#### Spring Boot 服务负责
+#### Python 后端的业务模块负责
 
 - 账号、登录、JWT、角色与文档访问权限。
 - 会话元数据、提醒、确认记录、业务审计。
 - 限流、幂等键、重要业务动作的最终执行。
-- 向 Agent 服务下发已验证的用户身份和允许访问的知识范围。
+- 向 Agent 模块传递已验证的用户身份和允许访问的知识范围。
 
-#### FastAPI Agent 服务负责
+#### 同一 Python 后端的 Agent 模块负责
 
 - 输入分类、结构化任务计划、工作流状态。
 - LLM 调用、工具选择、RAG 检索、证据校验和流式事件。
@@ -505,7 +498,7 @@ MAX_TOTAL_RUN_SECONDS = 45
 参数：company_code, trigger_date, content
 返回：proposal_id, preview, expires_at
 
-真实执行：由前端确认后调用 Spring Boot 的 confirm 接口完成。
+真实执行：由前端确认后调用 Python/FastAPI 的 confirm 接口完成。
 ```
 
 ### 8.4 工具安全规则
@@ -699,15 +692,15 @@ request_id、user_id、conversation_id、agent_run_id、模型名、Prompt 版�
 
 验收：Agent 无法绕过确认直接创建提醒；越权与参数非法请求被拒绝并有审计。
 
-### 第 11-12 周：Spring Boot 业务层
+### 第 11-12 周：Python 业务层
 
 交付：用户、JWT、角色、会话、提醒、审计、Redis 限流等服务。
 
-学习：Spring Security、JPA/MyBatis、Redis、接口契约、API 网关思路。
+学习：FastAPI 身份依赖、JWT、RBAC、数据库事务、Redis、接口契约和业务分层。
 
 验收：不同角色获得不同文档检索范围；高频请求被限流；确认动作具备幂等性。
 
-### 第 13 周：React / Next.js 工作台
+### 第 13 周：React / Vite 工作台
 
 交付：研究对话、SSE、引用卡片、执行状态、确认弹窗和基础管理页。
 
@@ -742,9 +735,8 @@ request_id、user_id、conversation_id、agent_run_id、模型名、Prompt 版�
 ```text
 finresearch-agent/
 ├── apps/
-│   ├── web/                         # Next.js 工作台
-│   ├── business-service/            # Spring Boot 业务网关
-│   └── agent-service/               # FastAPI + LangGraph
+│   ├── web/                         # Vite 工作台
+│   └── agent-service/               # Python/FastAPI 业务模块 + Agent + Worker
 ├── mcp-servers/
 │   ├── research-knowledge-mcp/
 │   ├── financial-data-mcp/
@@ -823,7 +815,7 @@ FastAPI / Pydantic / PostgreSQL
 -> LangGraph
 -> MCP
 -> Eval Harness + Langfuse
--> Spring Boot / Next.js 整合
+-> Python/FastAPI 与 React/Vite 整合
 ```
 
 ## 17. 项目最终验收与简历表达
@@ -844,7 +836,7 @@ FastAPI / Pydantic / PostgreSQL
 ### 17.2 简历项目描述参考
 
 ```text
-金融研究与投研工作台 Agent | Java/Spring Boot、Python/FastAPI、LangGraph、MCP、PostgreSQL/pgvector、Redis、React/Next.js
+金融研究与投研工作台 Agent | Python/FastAPI、LangGraph、MCP、PostgreSQL/pgvector、Redis、React/Vite
 
 - 独立设计并实现面向财报、公告与结构化财务指标的金融研究 Agent，提供带页码、发布日期和原文片段的可追溯回答。
 - 基于 LangGraph 构建状态化单 Agent Workflow，完成任务计划、受限工具调用、证据校验、资料不足收口及人工确认中断恢复。
@@ -862,7 +854,7 @@ FastAPI / Pydantic / PostgreSQL
 - 工具调用有副作用时如何二次确认、幂等和审计？
 - 如何评测 Prompt、模型或文档分块的改动是否造成回归？
 - 如何控制 Token、延迟和高并发下的成本？
-- 为什么 Java 服务和 Python Agent 服务需要拆分？
+- Python 后端如何划分业务模块、Agent 模块与后台 Worker 的职责？
 
 ## 18. 第一个可执行任务
 
