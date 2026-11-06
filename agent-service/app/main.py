@@ -17,8 +17,15 @@ from app.models import (
     ErrorResponse,
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
+    ToolCallLog,
+    ToolPlan,
 )
-from app.services import create_planner, format_financial_research_answer, get_financial_metrics
+from app.services import (
+    create_planner,
+    format_financial_research_answer,
+    format_knowledge_research_answer,
+    get_financial_metrics,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,6 +45,36 @@ planner = create_planner(settings)
 def sse_event(event: str, data: dict[str, object]) -> str:
     """Serialize one Server-Sent Event without exposing Python objects to clients."""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def execute_plan(plan: ToolPlan, request_id: str) -> tuple[list, list, ToolCallLog, str]:
+    """Execute exactly one validated, allowlisted tool chosen by the planner."""
+    if plan.intent == "get_financial_metrics":
+        results, tool_call = get_financial_metrics(plan, request_id)
+        return results, [], tool_call, format_financial_research_answer(results)
+
+    citations = search_knowledge(query=plan.query, company_code=plan.company_code)
+    tool_call = ToolCallLog(
+        tool_name="search_knowledge",
+        arguments=plan,
+        status="success",
+        result_count=len(citations),
+    )
+    logger.info(
+        "request_id=%s tool=%s arguments=%s status=%s result_count=%s",
+        request_id,
+        tool_call.tool_name,
+        plan.model_dump_json(),
+        tool_call.status,
+        tool_call.result_count,
+    )
+    return [], citations, tool_call, format_knowledge_research_answer(len(citations))
+
+
+def tool_stage_message(plan: ToolPlan) -> str:
+    if plan.intent == "get_financial_metrics":
+        return "正在查询财务指标"
+    return "正在检索公开资料证据"
 
 
 @app.get("/health")
@@ -110,14 +147,13 @@ async def knowledge_search(
     responses={400: {"model": ErrorResponse}},
 )
 async def chat(request: ChatRequest) -> ChatResponse | JSONResponse:
-    """Create a validated tool plan and execute the fixed metrics tool."""
+    """Create a validated plan and execute one fixed, source-safe tool."""
     request_id = str(uuid.uuid4())
     started_at = time.perf_counter()
 
     try:
         plan = await planner.create_plan(request.question)
-        results, tool_call = get_financial_metrics(plan, request_id)
-        answer = format_financial_research_answer(results)
+        results, citations, tool_call, answer = execute_plan(plan, request_id)
     except ValueError as error:
         code, message = str(error).split(":", maxsplit=1)
         logger.info(
@@ -137,6 +173,7 @@ async def chat(request: ChatRequest) -> ChatResponse | JSONResponse:
         planner=planner.planner_name,
         plan=plan,
         results=results,
+        citations=citations,
         answer=answer,
         tool_calls=[tool_call],
         latency_ms=latency_ms,
@@ -159,10 +196,13 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             plan = await planner.create_plan(request.question)
             yield sse_event(
                 "status",
-                {"request_id": request_id, "stage": "tool_call", "message": "正在查询财务指标"},
+                {
+                    "request_id": request_id,
+                    "stage": "tool_call",
+                    "message": tool_stage_message(plan),
+                },
             )
-            results, tool_call = get_financial_metrics(plan, request_id)
-            answer = format_financial_research_answer(results)
+            results, citations, tool_call, answer = execute_plan(plan, request_id)
         except ValueError as error:
             code, message = str(error).split(":", maxsplit=1)
             logger.info(
@@ -182,6 +222,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             planner=planner.planner_name,
             plan=plan,
             results=results,
+            citations=citations,
             answer=answer,
             tool_calls=[tool_call],
             latency_ms=round((time.perf_counter() - started_at) * 1000),

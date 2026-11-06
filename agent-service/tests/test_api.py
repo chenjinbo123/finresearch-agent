@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 import app.knowledge as knowledge
 import app.main as main
 import app.services as services
+from app.embeddings import DisabledEmbeddingProvider
 from app.models import FinancialMetricsPlan
 from app.services import LocalResearchPlanner
 
@@ -24,6 +25,12 @@ def knowledge_storage(monkeypatch: pytest.MonkeyPatch, tmp_path):
     monkeypatch.setattr(knowledge, "KNOWLEDGE_ROOT", knowledge_root)
     monkeypatch.setattr(knowledge, "SOURCE_DOCUMENTS_DIR", knowledge_root / "source_documents")
     monkeypatch.setattr(knowledge, "INDEX_PATH", knowledge_root / "knowledge_index.json")
+    # Unit tests must never use a developer's real local API key or quota.
+    monkeypatch.setattr(
+        knowledge,
+        "_resolve_embedding_provider",
+        lambda provider: provider if provider is not None else DisabledEmbeddingProvider(),
+    )
     return knowledge_root
 
 
@@ -44,6 +51,34 @@ def make_text_pdf_bytes(monkeypatch: pytest.MonkeyPatch, page_texts: list[str]) 
 
     monkeypatch.setattr(knowledge, "PdfReader", FakeReader)
     return b"%PDF-1.4 test document"
+
+
+class SemanticFixtureEmbeddingProvider:
+    """A controlled provider proving retrieval can use vectors, not word overlap."""
+
+    name = "semantic_fixture"
+    dimension = 2
+
+    def embed(self, text: str) -> list[float]:
+        if "上游压力" in text or "供应链采购成本" in text:
+            return [1.0, 0.0]
+        return [0.0, 1.0]
+
+    def embed_many(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed(text) for text in texts]
+
+
+class UnavailableEmbeddingProvider:
+    """Controlled remote outage fixture: search must still return source text."""
+
+    name = "unavailable"
+    dimension = 2
+
+    def embed(self, _text: str) -> list[float]:
+        raise ValueError("EMBEDDING_ACCOUNT_UNAVAILABLE: test provider is unavailable")
+
+    def embed_many(self, _texts: list[str]) -> list[list[float]]:
+        raise ValueError("EMBEDDING_ACCOUNT_UNAVAILABLE: test provider is unavailable")
 
 
 def test_health() -> None:
@@ -103,6 +138,62 @@ def test_chat_stream_reports_progress_and_completes() -> None:
     assert "正在查询财务指标" in response.text
     assert "event: answer" in response.text
     assert "贵州茅台：营业收入 900.00 亿元。" in response.text
+    assert "event: completed" in response.text
+
+
+def test_chat_uses_knowledge_search_for_risk_question(monkeypatch: pytest.MonkeyPatch) -> None:
+    expected_citation = {
+        "document_id": "document-001",
+        "title": "贵州茅台公开报告",
+        "company_code": "600519",
+        "company_name": "贵州茅台",
+        "document_type": "annual_report",
+        "published_at": "2025-08-20",
+        "page_number": 18,
+        "chunk_id": "document-001:18:0",
+        "excerpt": "公司经营面临原材料价格波动等风险。",
+        "score": 2,
+    }
+    monkeypatch.setattr(main, "search_knowledge", lambda **_kwargs: [expected_citation])
+
+    response = client.post("/v1/chat", json={"question": "贵州茅台有哪些经营风险？"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["plan"] == {
+        "intent": "search_knowledge",
+        "query": "贵州茅台有哪些经营风险？",
+        "company_code": "600519",
+    }
+    assert body["results"] == []
+    assert body["tool_calls"][0]["tool_name"] == "search_knowledge"
+    assert body["tool_calls"][0]["result_count"] == 1
+    assert body["citations"] == [expected_citation]
+    assert "请结合下方引用" in body["answer"]
+
+
+def test_chat_returns_safe_answer_when_knowledge_search_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(main, "search_knowledge", lambda **_kwargs: [])
+
+    response = client.post("/v1/chat", json={"question": "公告中提到了哪些风险？"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["plan"]["intent"] == "search_knowledge"
+    assert body["citations"] == []
+    assert body["tool_calls"][0]["result_count"] == 0
+    assert body["answer"] == "现有资料不足以确认：在已入库的公开资料中未检索到相关原文证据。"
+
+
+def test_chat_stream_reports_knowledge_retrieval_stage(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(main, "search_knowledge", lambda **_kwargs: [])
+
+    response = client.post("/v1/chat/stream", json={"question": "公告中提到了哪些风险？"})
+
+    assert response.status_code == 200
+    assert "正在检索公开资料证据" in response.text
     assert "event: completed" in response.text
 
 
@@ -203,3 +294,91 @@ def test_pdf_ingestion_reports_no_extractable_text(
             document_type="other",
             published_at=None,
         )
+
+
+def test_vector_retrieval_can_return_related_chunk_without_keyword_overlap(
+    monkeypatch: pytest.MonkeyPatch, knowledge_storage
+) -> None:
+    file_content = make_text_pdf_bytes(
+        monkeypatch,
+        [
+            "供应链采购成本上升可能影响公司经营。",
+            "市场竞争变化需要持续关注。",
+        ],
+    )
+    provider = SemanticFixtureEmbeddingProvider()
+    knowledge.ingest_pdf_document(
+        file_name="公开资料.pdf",
+        file_content=file_content,
+        company_code="600519",
+        company_name="贵州茅台",
+        document_type="announcement",
+        published_at=None,
+        embedding_provider=provider,
+    )
+
+    citations = knowledge.search_knowledge(
+        query="上游压力", company_code="600519", embedding_provider=provider
+    )
+
+    assert len(citations) == 1
+    assert citations[0].page_number == 1
+    assert "供应链采购成本" in citations[0].excerpt
+    assert citations[0].score == 1000
+
+
+def test_keyword_score_does_not_reward_repeated_page_headers() -> None:
+    terms = knowledge._search_terms("贵州茅台经营风险")
+
+    once = knowledge._keyword_coverage_score("贵州茅台提示经营风险。", terms)
+    repeated = knowledge._keyword_coverage_score("贵州茅台 " * 100, terms)
+
+    assert once > repeated
+    # "贵州茅台" produces three two-character terms. Repeating the header
+    # cannot increase that fixed coverage score.
+    assert repeated == 3 / len(terms)
+
+
+def test_search_falls_back_to_keywords_when_remote_embedding_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch, knowledge_storage
+) -> None:
+    file_content = make_text_pdf_bytes(monkeypatch, ["公司经营面临原材料价格波动风险提示。"])
+    knowledge.ingest_pdf_document(
+        file_name="公开资料.pdf",
+        file_content=file_content,
+        company_code="600519",
+        company_name="贵州茅台",
+        document_type="annual_report",
+        published_at=None,
+    )
+
+    citations = knowledge.search_knowledge(
+        query="原材料风险",
+        company_code="600519",
+        embedding_provider=UnavailableEmbeddingProvider(),
+    )
+
+    assert len(citations) == 1
+    assert "原材料价格波动" in citations[0].excerpt
+
+
+def test_rebuild_embeddings_adds_vectors_to_existing_chunks(
+    monkeypatch: pytest.MonkeyPatch, knowledge_storage
+) -> None:
+    file_content = make_text_pdf_bytes(monkeypatch, ["供应链采购成本上升可能影响公司经营。"])
+    knowledge.ingest_pdf_document(
+        file_name="公开资料.pdf",
+        file_content=file_content,
+        company_code="600519",
+        company_name="贵州茅台",
+        document_type="announcement",
+        published_at=None,
+    )
+    provider = SemanticFixtureEmbeddingProvider()
+
+    count = knowledge.rebuild_knowledge_embeddings(provider)
+    index = knowledge._load_index()
+
+    assert count == 1
+    assert index["chunks"][0]["embedding_provider"] == "semantic_fixture"
+    assert index["chunks"][0]["embedding"] == [1.0, 0.0]

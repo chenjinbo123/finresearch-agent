@@ -1,0 +1,10 @@
+{"id":"financial-001","question":"查询宁德时代 2025H1 营收","expected":{"outcome":"success","intent":"get_financial_metrics","company_codes":["300750"],"period":"2025H1","metric_codes":["revenue"],"result_behavior":"financial_results"}}
+{"id":"financial-002","question":"查询比亚迪 2025年上半年归母净利润","expected":{"outcome":"success","intent":"get_financial_metrics","company_codes":["002594"],"period":"2025H1","metric_codes":["net_profit"],"result_behavior":"financial_results"}}
+{"id":"financial-003","question":"对比宁德时代和比亚迪 2025H1 营收和归母净利润","expected":{"outcome":"success","intent":"get_financial_metrics","company_codes":["300750","002594"],"period":"2025H1","metric_codes":["revenue","net_profit"],"result_behavior":"financial_results"}}
+{"id":"financial-004","question":"查询贵州茅台 2025H1 营收和归母净利润","expected":{"outcome":"success","intent":"get_financial_metrics","company_codes":["600519"],"period":"2025H1","metric_codes":["revenue","net_profit"],"result_behavior":"financial_results"}}
+{"id":"financial-error-001","question":"查询招商银行 2025H1 营收","expected":{"outcome":"error","error_code":"UNSUPPORTED_COMPANY"}}
+{"id":"financial-error-002","question":"查询宁德时代 2024年营收","expected":{"outcome":"error","error_code":"UNSUPPORTED_PERIOD"}}
+{"id":"knowledge-001","question":"贵州茅台有哪些经营风险？","expected":{"outcome":"success","intent":"search_knowledge","company_code":"600519","result_behavior":"citation_required"}}
+{"id":"knowledge-002","question":"比亚迪公告中提到了哪些风险？","expected":{"outcome":"success","intent":"search_knowledge","company_code":"002594","result_behavior":"citation_required"}}
+{"id":"knowledge-003","question":"公告中提到了哪些风险？","expected":{"outcome":"success","intent":"search_knowledge","result_behavior":"safe_no_evidence"}}
+{"id":"knowledge-004","question":"宁德时代近期公告有哪些经营信息？","expected":{"outcome":"success","intent":"search_knowledge","company_code":"300750","result_behavior":"safe_no_evidence"}}

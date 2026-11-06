@@ -20,6 +20,10 @@ dev = [
     "pytest>=8.3.0",
 ]
 
+[project.scripts]
+finresearch-eval = "app.evals:main"
+finresearch-rebuild-embeddings = "app.embeddings:main"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

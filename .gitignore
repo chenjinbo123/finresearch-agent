@@ -1,6 +1,35 @@
+# Python environments and generated files
 .venv/
+venv/
 __pycache__/
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 *.py[cod]
+*.egg-info/
+build/
+dist/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local credentials (keep shareable examples)
 .env
-data/knowledge/
+.env.*
+!.env.example
+
+# IDE settings and local code index
+.idea/
+.vscode/
+.codegraph/
+
+# Runtime knowledge data and temporary test output
+agent-service/data/knowledge/
+.test-tmp/
+tests/.pytest-agent-run/
+agent-service/tests/manual_embedding_verify/
+*.log
+
+# Operating system files
+.DS_Store
+Thumbs.db

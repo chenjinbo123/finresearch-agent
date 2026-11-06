@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -9,12 +9,26 @@ class ChatRequest(BaseModel):
 
 
 class FinancialMetricsPlan(BaseModel):
-    """The only tool plan the first slice accepts."""
+    """A validated plan for the deterministic financial-metrics tool."""
 
     intent: Literal["get_financial_metrics"]
     company_codes: list[str] = Field(min_length=1, max_length=2)
     period: Literal["2025H1"]
     metric_codes: list[Literal["revenue", "net_profit"]] = Field(min_length=1, max_length=2)
+
+
+class KnowledgeSearchPlan(BaseModel):
+    """A validated plan for searching source-linked document excerpts."""
+
+    intent: Literal["search_knowledge"]
+    query: str = Field(min_length=2, max_length=300)
+    company_code: str | None = Field(default=None, min_length=6, max_length=6)
+
+
+ToolPlan = Annotated[
+    FinancialMetricsPlan | KnowledgeSearchPlan,
+    Field(discriminator="intent"),
+]
 
 
 class FinancialMetric(BaseModel):
@@ -31,8 +45,8 @@ class FinancialMetric(BaseModel):
 
 
 class ToolCallLog(BaseModel):
-    tool_name: Literal["get_financial_metrics"]
-    arguments: FinancialMetricsPlan
+    tool_name: Literal["get_financial_metrics", "search_knowledge"]
+    arguments: ToolPlan
     status: Literal["success"]
     result_count: int
 
@@ -40,9 +54,10 @@ class ToolCallLog(BaseModel):
 class ChatResponse(BaseModel):
     request_id: str
     planner: Literal["local_rule", "deepseek"]
-    plan: FinancialMetricsPlan
-    results: list[FinancialMetric]
-    answer: str = Field(description="Deterministic, human-readable answer based only on tool results")
+    plan: ToolPlan
+    results: list[FinancialMetric] = Field(default_factory=list)
+    citations: list["Citation"] = Field(default_factory=list)
+    answer: str = Field(description="Human-readable answer based only on tool results")
     tool_calls: list[ToolCallLog]
     latency_ms: int = Field(ge=0)
 
@@ -94,3 +109,6 @@ class KnowledgeSearchResponse(BaseModel):
     request_id: str
     query: str
     citations: list[Citation]
+
+
+ChatResponse.model_rebuild()

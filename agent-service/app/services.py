@@ -9,7 +9,7 @@ from typing import Protocol
 import httpx
 
 from app.config import Settings
-from app.models import FinancialMetric, FinancialMetricsPlan, ToolCallLog
+from app.models import FinancialMetric, FinancialMetricsPlan, KnowledgeSearchPlan, ToolCallLog, ToolPlan
 from app.prompts import FINANCIAL_PLANNER_SYSTEM_PROMPT
 
 logger = logging.getLogger("finresearch.agent.tool")
@@ -137,34 +137,36 @@ def load_financial_metrics() -> dict[tuple[str, str, str], FinancialMetric]:
 
 
 class LocalResearchPlanner:
-    """Temporary deterministic planner used before an LLM is configured."""
+    """Deterministic planner used in offline learning and automated tests."""
 
     planner_name = "local_rule"
 
-    async def create_plan(self, question: str) -> FinancialMetricsPlan:
+    async def create_plan(self, question: str) -> ToolPlan:
         company_codes = [code for name, code in COMPANIES.items() if name in question]
-        if not company_codes:
-            raise ValueError("UNSUPPORTED_COMPANY: 目前只支持宁德时代、比亚迪和贵州茅台。")
-
         metric_codes = list(dict.fromkeys(code for name, code in METRICS.items() if name in question))
-        if not metric_codes:
-            raise ValueError("UNSUPPORTED_METRIC: 请明确指定营收或归母净利润。")
+        if metric_codes:
+            if not company_codes:
+                raise ValueError("UNSUPPORTED_COMPANY: 目前只支持宁德时代、比亚迪和贵州茅台。")
+            if "2025H1" not in question and "2025年上半年" not in question:
+                raise ValueError("UNSUPPORTED_PERIOD: 第一版仅支持 2025H1。")
+            return FinancialMetricsPlan(
+                intent="get_financial_metrics",
+                company_codes=company_codes,
+                period="2025H1",
+                metric_codes=metric_codes,
+            )
 
-        if "2025H1" not in question and "2025年上半年" not in question:
-            raise ValueError("UNSUPPORTED_PERIOD: 第一版仅支持 2025H1。")
-
-        return FinancialMetricsPlan(
-            intent="get_financial_metrics",
-            company_codes=company_codes,
-            period="2025H1",
-            metric_codes=metric_codes,
+        return KnowledgeSearchPlan(
+            intent="search_knowledge",
+            query=question,
+            company_code=company_codes[0] if len(company_codes) == 1 else None,
         )
 
 
 class ResearchPlanner(Protocol):
     planner_name: str
 
-    async def create_plan(self, question: str) -> FinancialMetricsPlan: ...
+    async def create_plan(self, question: str) -> ToolPlan: ...
 
 
 class DeepSeekResearchPlanner:
@@ -181,7 +183,7 @@ class DeepSeekResearchPlanner:
             raise ValueError("DEEPSEEK_NOT_CONFIGURED: 未配置 DEEPSEEK_API_KEY。")
         self._settings = settings
 
-    async def create_plan(self, question: str) -> FinancialMetricsPlan:
+    async def create_plan(self, question: str) -> ToolPlan:
         payload = {
             "model": self._settings.deepseek_model,
             "messages": [
@@ -215,7 +217,7 @@ class DeepSeekResearchPlanner:
 
         try:
             content = response.json()["choices"][0]["message"]["content"]
-            return FinancialMetricsPlan.model_validate(json.loads(content))
+            return validate_tool_plan(json.loads(content))
         except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValueError) as error:
             logger.warning("deepseek_invalid_plan=%r", response.text[:500])
             raise ValueError("PLANNER_INVALID_OUTPUT: 模型未返回合法的查询计划，请重试。") from error
@@ -226,6 +228,18 @@ def create_planner(settings: Settings) -> ResearchPlanner:
     if settings.deepseek_enabled:
         return DeepSeekResearchPlanner(settings)
     return LocalResearchPlanner()
+
+
+def validate_tool_plan(value: object) -> ToolPlan:
+    """Validate that a planner chose exactly one tool from the fixed allowlist."""
+    if not isinstance(value, dict):
+        raise ValueError("PLANNER_INVALID_OUTPUT: 模型未返回 JSON 对象。")
+    intent = value.get("intent")
+    if intent == "get_financial_metrics":
+        return FinancialMetricsPlan.model_validate(value)
+    if intent == "search_knowledge":
+        return KnowledgeSearchPlan.model_validate(value)
+    raise ValueError("PLANNER_INVALID_OUTPUT: 模型选择了不支持的工具。")
 
 
 def get_financial_metrics(
@@ -289,3 +303,10 @@ def format_financial_research_answer(results: list[FinancialMetric]) -> str:
             source_lines.append(f"- {source[0]}，第 {source[1]} 页，发布日期 {source[2]}。")
 
     return "\n".join([*summary_lines, "", "数据来源：", *source_lines])
+
+
+def format_knowledge_research_answer(citation_count: int) -> str:
+    """Describe retrieval status without letting the model invent a conclusion."""
+    if citation_count == 0:
+        return "现有资料不足以确认：在已入库的公开资料中未检索到相关原文证据。"
+    return f"已检索到 {citation_count} 条相关公开资料原文，请结合下方引用中的页码和原文片段复核。"
