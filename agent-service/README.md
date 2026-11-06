@@ -1,5 +1,25 @@
 # Agent Service
 
+## 换电脑继续学习
+
+年报PDF、知识库索引及向量、历史备份、行情/财报验收报告现已随Git仓库保存，位于data目录。
+不要重新上传已入库PDF或重新生成文档向量。`.env`仍未提交，需要自行安全复制到agent-service/.env。
+
+安装Python 3.11或更高版本后，在agent-service目录执行：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
+打开 http://127.0.0.1:8000/docs 使用接口。查询真实数据和模型仍需要网络；文档向量已保存，
+语义查询时仍会调用Embedding接口生成问题向量。不要复制另一台电脑的.venv。
+学习记录见根目录学习进度与待讲解清单.md、开发进度交接.md和agent.md。
+
+历史章节中“运行数据被Git忽略”的说明是此前状态：2026-11-06按用户要求已改为跟踪整个data目录。
+后续入库或验收会产生可提交的数据变更，提交前仍需检查是否含敏感信息。
+
 This is the first executable slice of FinResearch Agent. A local planner (or
 optionally DeepSeek) turns a Chinese research question into one validated,
 allowlisted tool plan. It can query either deterministic financial metrics from

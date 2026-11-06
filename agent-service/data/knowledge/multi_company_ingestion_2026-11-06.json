@@ -1,0 +1,26 @@
+[
+  {
+    "document_id": "b4f1713d7b821eb076c10271",
+    "title": "宁德时代_300750_2024年年度报告",
+    "source_file_name": "宁德时代_300750_2024年年度报告.pdf",
+    "company_code": "300750",
+    "company_name": "宁德时代",
+    "document_type": "annual_report",
+    "published_at": "2025-03-15",
+    "page_count": 229,
+    "chunk_count": 614,
+    "ingested_at": "2026-11-06T06:46:11.708251Z"
+  },
+  {
+    "document_id": "e9c2d7fdd088e151ccb6c8ad",
+    "title": "比亚迪_002594_2024年年度报告",
+    "source_file_name": "比亚迪_002594_2024年年度报告.pdf",
+    "company_code": "002594",
+    "company_name": "比亚迪",
+    "document_type": "annual_report",
+    "published_at": "2025-03-25",
+    "page_count": 290,
+    "chunk_count": 783,
+    "ingested_at": "2026-11-06T06:50:39.142441Z"
+  }
+]

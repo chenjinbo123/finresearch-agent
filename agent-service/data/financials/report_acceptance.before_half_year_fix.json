@@ -1,0 +1,378 @@
+{
+  "verified_at": "2026-11-06T08:15:11.040256+00:00",
+  "passed": false,
+  "results": [
+    {
+      "name": "600519_2024FY",
+      "checks": {
+        "http_ok": true,
+        "identity": true,
+        "status": true,
+        "source": true,
+        "fields": true,
+        "dates": true
+      },
+      "response": {
+        "request_id": "b14de4cc-a670-4962-84c1-a874ec8e4c4a",
+        "financial_data": {
+          "company_code": "600519",
+          "company_name": "贵州茅台",
+          "period": "2024FY",
+          "period_start": "2024-01-01",
+          "period_end": "2024-12-31",
+          "basis": "year_to_date",
+          "source": "eastmoney_income_statement",
+          "source_url": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_GINCOME&columns=SECURITY_CODE%2CSECURITY_NAME_ABBR%2CREPORT_DATE%2CREPORT_TYPE%2CNOTICE_DATE%2CUPDATE_DATE%2CCURRENCY%2COPERATE_INCOME%2CPARENT_NETPROFIT&filter=%28SECURITY_CODE%3D%22600519%22%29%28REPORT_DATE%3D%272024-12-31%27%29&pageSize=10&pageNumber=1&source=WEB&client=WEB",
+          "source_report": "RPT_F10_FINANCE_GINCOME",
+          "source_version": "ff74fedcab4a4b09ef1da8f3fb37c821",
+          "queried_at": "2026-11-06T08:14:58.323073Z",
+          "notice_date": "2025-04-03",
+          "source_updated_at": "2026-04-17",
+          "revision_policy": "latest_source_snapshot",
+          "status": "ok",
+          "metrics": [
+            {
+              "metric_code": "revenue",
+              "metric_name": "营业收入",
+              "value": "170899152276.34",
+              "unit": "CNY",
+              "source_field": "OPERATE_INCOME"
+            },
+            {
+              "metric_code": "net_profit",
+              "metric_name": "归母净利润",
+              "value": "86228146421.62",
+              "unit": "CNY",
+              "source_field": "PARENT_NETPROFIT"
+            }
+          ],
+          "missing_metrics": [],
+          "warning": "数据为查询时数据源提供的最新版本，可能含后续修订；不是历史时点快照，不能直接用于无前视偏差回测。"
+        },
+        "tool_calls": [
+          {
+            "tool_name": "get_report_financials",
+            "arguments": {
+              "intent": "get_report_financials",
+              "company_code": "600519",
+              "period": "2024FY",
+              "metric_codes": [
+                "revenue",
+                "net_profit"
+              ]
+            },
+            "status": "success",
+            "result_count": 2,
+            "error_code": null,
+            "retrieval": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "300750_2024FY",
+      "checks": {
+        "http_ok": true,
+        "identity": true,
+        "status": true,
+        "source": true,
+        "fields": true,
+        "dates": true
+      },
+      "response": {
+        "request_id": "1be8cd64-13de-442e-99c1-9935b61c722b",
+        "financial_data": {
+          "company_code": "300750",
+          "company_name": "宁德时代",
+          "period": "2024FY",
+          "period_start": "2024-01-01",
+          "period_end": "2024-12-31",
+          "basis": "year_to_date",
+          "source": "eastmoney_income_statement",
+          "source_url": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_GINCOME&columns=SECURITY_CODE%2CSECURITY_NAME_ABBR%2CREPORT_DATE%2CREPORT_TYPE%2CNOTICE_DATE%2CUPDATE_DATE%2CCURRENCY%2COPERATE_INCOME%2CPARENT_NETPROFIT&filter=%28SECURITY_CODE%3D%22300750%22%29%28REPORT_DATE%3D%272024-12-31%27%29&pageSize=10&pageNumber=1&source=WEB&client=WEB",
+          "source_report": "RPT_F10_FINANCE_GINCOME",
+          "source_version": "0166ded8a2a4760e327a297acab7ec51",
+          "queried_at": "2026-11-06T08:15:00.628000Z",
+          "notice_date": "2025-03-15",
+          "source_updated_at": "2026-03-10",
+          "revision_policy": "latest_source_snapshot",
+          "status": "ok",
+          "metrics": [
+            {
+              "metric_code": "revenue",
+              "metric_name": "营业收入",
+              "value": "362012554000",
+              "unit": "CNY",
+              "source_field": "OPERATE_INCOME"
+            },
+            {
+              "metric_code": "net_profit",
+              "metric_name": "归母净利润",
+              "value": "50744682000",
+              "unit": "CNY",
+              "source_field": "PARENT_NETPROFIT"
+            }
+          ],
+          "missing_metrics": [],
+          "warning": "数据为查询时数据源提供的最新版本，可能含后续修订；不是历史时点快照，不能直接用于无前视偏差回测。"
+        },
+        "tool_calls": [
+          {
+            "tool_name": "get_report_financials",
+            "arguments": {
+              "intent": "get_report_financials",
+              "company_code": "300750",
+              "period": "2024FY",
+              "metric_codes": [
+                "revenue",
+                "net_profit"
+              ]
+            },
+            "status": "success",
+            "result_count": 2,
+            "error_code": null,
+            "retrieval": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "002594_2024FY",
+      "checks": {
+        "http_ok": true,
+        "identity": true,
+        "status": true,
+        "source": true,
+        "fields": true,
+        "dates": true
+      },
+      "response": {
+        "request_id": "817606fc-7d32-4b47-bf26-465f2ca9d783",
+        "financial_data": {
+          "company_code": "002594",
+          "company_name": "比亚迪",
+          "period": "2024FY",
+          "period_start": "2024-01-01",
+          "period_end": "2024-12-31",
+          "basis": "year_to_date",
+          "source": "eastmoney_income_statement",
+          "source_url": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_GINCOME&columns=SECURITY_CODE%2CSECURITY_NAME_ABBR%2CREPORT_DATE%2CREPORT_TYPE%2CNOTICE_DATE%2CUPDATE_DATE%2CCURRENCY%2COPERATE_INCOME%2CPARENT_NETPROFIT&filter=%28SECURITY_CODE%3D%22002594%22%29%28REPORT_DATE%3D%272024-12-31%27%29&pageSize=10&pageNumber=1&source=WEB&client=WEB",
+          "source_report": "RPT_F10_FINANCE_GINCOME",
+          "source_version": "af67f8a8b0cb38e6ea4a1112be699e34",
+          "queried_at": "2026-11-06T08:15:02.367412Z",
+          "notice_date": "2025-03-25",
+          "source_updated_at": "2026-03-28",
+          "revision_policy": "latest_source_snapshot",
+          "status": "ok",
+          "metrics": [
+            {
+              "metric_code": "revenue",
+              "metric_name": "营业收入",
+              "value": "777102455000",
+              "unit": "CNY",
+              "source_field": "OPERATE_INCOME"
+            },
+            {
+              "metric_code": "net_profit",
+              "metric_name": "归母净利润",
+              "value": "40254346000",
+              "unit": "CNY",
+              "source_field": "PARENT_NETPROFIT"
+            }
+          ],
+          "missing_metrics": [],
+          "warning": "数据为查询时数据源提供的最新版本，可能含后续修订；不是历史时点快照，不能直接用于无前视偏差回测。"
+        },
+        "tool_calls": [
+          {
+            "tool_name": "get_report_financials",
+            "arguments": {
+              "intent": "get_report_financials",
+              "company_code": "002594",
+              "period": "2024FY",
+              "metric_codes": [
+                "revenue",
+                "net_profit"
+              ]
+            },
+            "status": "success",
+            "result_count": 2,
+            "error_code": null,
+            "retrieval": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "600519_2025H1",
+      "checks": {
+        "http_ok": false,
+        "identity": false,
+        "status": false,
+        "source": false,
+        "fields": false,
+        "dates": false
+      },
+      "response": {
+        "code": "REPORT_INVALID_RESPONSE",
+        "message": "财务数据字段、口径或记录身份异常，本次不返回未经校验的指标。",
+        "request_id": "b6179be4-ffa6-4496-93e0-d752bf5c8cc9",
+        "tool_calls": [
+          {
+            "tool_name": "get_report_financials",
+            "arguments": {
+              "intent": "get_report_financials",
+              "company_code": "600519",
+              "period": "2025H1",
+              "metric_codes": [
+                "revenue",
+                "net_profit"
+              ]
+            },
+            "status": "failed",
+            "result_count": 0,
+            "error_code": "REPORT_INVALID_RESPONSE",
+            "retrieval": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "002594_2000FY",
+      "checks": {
+        "http_ok": true,
+        "identity": true,
+        "status": true,
+        "source": true,
+        "fields": true,
+        "dates": true
+      },
+      "response": {
+        "request_id": "915f1fd2-46d7-4811-8484-e6f23dfabc79",
+        "financial_data": {
+          "company_code": "002594",
+          "company_name": "比亚迪",
+          "period": "2000FY",
+          "period_start": "2000-01-01",
+          "period_end": "2000-12-31",
+          "basis": "year_to_date",
+          "source": "eastmoney_income_statement",
+          "source_url": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_GINCOME&columns=SECURITY_CODE%2CSECURITY_NAME_ABBR%2CREPORT_DATE%2CREPORT_TYPE%2CNOTICE_DATE%2CUPDATE_DATE%2CCURRENCY%2COPERATE_INCOME%2CPARENT_NETPROFIT&filter=%28SECURITY_CODE%3D%22002594%22%29%28REPORT_DATE%3D%272000-12-31%27%29&pageSize=10&pageNumber=1&source=WEB&client=WEB",
+          "source_report": "RPT_F10_FINANCE_GINCOME",
+          "source_version": null,
+          "queried_at": "2026-11-06T08:15:05.724644Z",
+          "notice_date": null,
+          "source_updated_at": null,
+          "revision_policy": "latest_source_snapshot",
+          "status": "no_data",
+          "metrics": [],
+          "missing_metrics": [
+            "revenue",
+            "net_profit"
+          ],
+          "warning": "数据为查询时数据源提供的最新版本，可能含后续修订；不是历史时点快照，不能直接用于无前视偏差回测。"
+        },
+        "tool_calls": [
+          {
+            "tool_name": "get_report_financials",
+            "arguments": {
+              "intent": "get_report_financials",
+              "company_code": "002594",
+              "period": "2000FY",
+              "metric_codes": [
+                "revenue",
+                "net_profit"
+              ]
+            },
+            "status": "no_evidence",
+            "result_count": 0,
+            "error_code": null,
+            "retrieval": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "real_chat",
+      "checks": {
+        "http_ok": true,
+        "real_planner": true,
+        "correct_tool": true,
+        "same_values_as_direct": true,
+        "separate_from_demo": true
+      },
+      "response": {
+        "request_id": "937be8cd-47fb-450d-8583-3dd1e434cd98",
+        "planner": "deepseek",
+        "plan": {
+          "intent": "get_report_financials",
+          "company_code": "600519",
+          "period": "2024FY",
+          "metric_codes": [
+            "revenue",
+            "net_profit"
+          ]
+        },
+        "results": [],
+        "citations": [],
+        "answer": "【真实财报数据】贵州茅台 2024FY，累计区间 2024-01-01 至 2024-12-31。\n- 营业收入：170,899,152,276.34 元（1,708.99 亿元）。\n- 归母净利润：86,228,146,421.62 元（862.28 亿元）。\n来源：东方财富利润表；公告日期 2025-04-03；数据源更新日期 2026-04-17；查询时间 2026-11-06T08:15:11.034648+00:00。\n数据为查询时数据源提供的最新版本，可能含后续修订；不是历史时点快照，不能直接用于无前视偏差回测。",
+        "tool_calls": [
+          {
+            "tool_name": "get_report_financials",
+            "arguments": {
+              "intent": "get_report_financials",
+              "company_code": "600519",
+              "period": "2024FY",
+              "metric_codes": [
+                "revenue",
+                "net_profit"
+              ]
+            },
+            "status": "success",
+            "result_count": 2,
+            "error_code": null,
+            "retrieval": null
+          }
+        ],
+        "evidence": null,
+        "market_data": null,
+        "financial_data": {
+          "company_code": "600519",
+          "company_name": "贵州茅台",
+          "period": "2024FY",
+          "period_start": "2024-01-01",
+          "period_end": "2024-12-31",
+          "basis": "year_to_date",
+          "source": "eastmoney_income_statement",
+          "source_url": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_GINCOME&columns=SECURITY_CODE%2CSECURITY_NAME_ABBR%2CREPORT_DATE%2CREPORT_TYPE%2CNOTICE_DATE%2CUPDATE_DATE%2CCURRENCY%2COPERATE_INCOME%2CPARENT_NETPROFIT&filter=%28SECURITY_CODE%3D%22600519%22%29%28REPORT_DATE%3D%272024-12-31%27%29&pageSize=10&pageNumber=1&source=WEB&client=WEB",
+          "source_report": "RPT_F10_FINANCE_GINCOME",
+          "source_version": "ff74fedcab4a4b09ef1da8f3fb37c821",
+          "queried_at": "2026-11-06T08:15:11.034648Z",
+          "notice_date": "2025-04-03",
+          "source_updated_at": "2026-04-17",
+          "revision_policy": "latest_source_snapshot",
+          "status": "ok",
+          "metrics": [
+            {
+              "metric_code": "revenue",
+              "metric_name": "营业收入",
+              "value": "170899152276.34",
+              "unit": "CNY",
+              "source_field": "OPERATE_INCOME"
+            },
+            {
+              "metric_code": "net_profit",
+              "metric_name": "归母净利润",
+              "value": "86228146421.62",
+              "unit": "CNY",
+              "source_field": "PARENT_NETPROFIT"
+            }
+          ],
+          "missing_metrics": [],
+          "warning": "数据为查询时数据源提供的最新版本，可能含后续修订；不是历史时点快照，不能直接用于无前视偏差回测。"
+        },
+        "latency_ms": 5311
+      }
+    }
+  ]
+}

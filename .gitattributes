@@ -1,0 +1,2 @@
+# Large JSON snapshots remain readable but should not produce enormous text diffs.
+agent-service/data/knowledge/knowledge_index*.json -diff

@@ -23,10 +23,8 @@ htmlcov/
 .vscode/
 .codegraph/
 
-# Runtime knowledge data and temporary test output
-agent-service/data/knowledge/
-agent-service/data/market/
-agent-service/data/financials/
+# Shared learning data and acceptance snapshots under agent-service/data are tracked.
+# Keep temporary test output out of the repository.
 .test-tmp/
 tests/.pytest-agent-run/
 agent-service/tests/manual_embedding_verify/
