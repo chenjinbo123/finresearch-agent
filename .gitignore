@@ -25,6 +25,8 @@ htmlcov/
 
 # Runtime knowledge data and temporary test output
 agent-service/data/knowledge/
+agent-service/data/market/
+agent-service/data/financials/
 .test-tmp/
 tests/.pytest-agent-run/
 agent-service/tests/manual_embedding_verify/

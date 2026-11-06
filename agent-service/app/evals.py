@@ -140,7 +140,9 @@ def _execute_for_eval(plan: ToolPlan, behavior: str | None) -> tuple[int, int, s
         knowledge_searcher = lambda **_kwargs: []
     else:
         knowledge_searcher = search_knowledge
-    citations = knowledge_searcher(query=plan.query, company_code=plan.company_code)
+    citations = knowledge_searcher(
+        query=plan.query, company_code=plan.company_code, report_year=plan.report_year
+    )
     return 0, len(citations), format_knowledge_research_answer(len(citations))
 
 

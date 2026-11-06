@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 import app.knowledge as knowledge
 import app.main as main
+import app.tools as tool_module
 import app.services as services
 from app.embeddings import DisabledEmbeddingProvider
 from app.models import FinancialMetricsPlan
@@ -13,10 +14,94 @@ from app.services import LocalResearchPlanner
 client = TestClient(main.app)
 
 
+@pytest.mark.parametrize("payload,code", [('{"question":"private" "x":1}', "INVALID_JSON"), ('{"question":123}', "VALIDATION_ERROR")])
+def test_invalid_requests_use_safe_error_envelope(payload, code):
+    response = client.post("/v1/chat", content=payload, headers={"Content-Type": "application/json"})
+    assert response.status_code == 422
+    assert response.json()["code"] == code
+    assert response.json()["request_id"]
+    assert response.json()["tool_calls"] == []
+    assert "private" not in response.text
+
+
+@pytest.mark.parametrize("code,status_code", [("MODEL_UNAVAILABLE", 503), ("MODEL_TIMEOUT", 504), ("PLANNER_INVALID_OUTPUT", 502)])
+def test_planner_failure_http_and_stream(monkeypatch, code, status_code):
+    class FailedPlanner:
+        planner_name = "deepseek"
+
+        async def create_plan(self, question):
+            raise ValueError(f"{code}: 模型暂不可用")
+
+    monkeypatch.setattr(main, "planner", FailedPlanner())
+    response = client.post("/v1/chat", json={"question": "贵州茅台营收"})
+    assert response.status_code == status_code
+    assert response.json()["code"] == code
+    assert response.json()["tool_calls"] == []
+    stream = client.post("/v1/chat/stream", json={"question": "贵州茅台营收"})
+    import json
+    events = [json.loads(line[6:]) for line in stream.text.splitlines() if line.startswith("data: ")]
+    assert events[-1]["code"] == code
+    assert events[0]["request_id"] == events[-1]["request_id"]
+    assert "event: error" in stream.text
+    assert "event: completed" not in stream.text
+    assert "event: answer" not in stream.text
+
+
+def test_unexpected_tool_failure_is_safe_and_traceable(monkeypatch):
+    def fail(*args, **kwargs):
+        raise RuntimeError("private-api-key-and-internal-path")
+
+    monkeypatch.setattr(tool_module, "get_financial_metrics", fail)
+    response = client.post("/v1/chat", json={"question": "贵州茅台2025H1营收"})
+    assert response.status_code == 500
+    assert "private-api-key" not in response.text
+    body = response.json()
+    assert body["code"] == "INTERNAL_ERROR"
+    assert body["tool_calls"][0]["status"] == "failed"
+    assert body["tool_calls"][0]["error_code"] == "INTERNAL_ERROR"
+
+
+def test_empty_index_exposes_no_evidence(knowledge_storage):
+    response = client.post("/v1/chat", json={"question": "贵州茅台有哪些经营风险？"})
+    body = response.json()
+    assert response.status_code == 200
+    assert body["citations"] == []
+    assert body["tool_calls"][0]["status"] == "no_evidence"
+    assert body["tool_calls"][0]["retrieval"]["outcome"] == "no_documents"
+
+
+def test_embedding_outage_is_visible_to_user(monkeypatch, knowledge_storage):
+    content = make_text_pdf_bytes(monkeypatch, ["贵州茅台经营风险包括宏观经济风险。"])
+    knowledge.ingest_pdf_document(file_name="报告.pdf", file_content=content, company_code="600519",
+                                  company_name="贵州茅台", document_type="annual_report", published_at=date(2025, 4, 3))
+    monkeypatch.setattr(knowledge, "_resolve_embedding_provider", lambda provider: UnavailableEmbeddingProvider())
+    direct = client.post("/v1/knowledge/search", json={"query": "经营风险", "company_code": "600519"})
+    assert direct.status_code == 200
+    diagnostics = direct.json()["retrieval"]
+    assert diagnostics["mode"] == "keyword"
+    assert diagnostics["degraded"] is True
+    assert diagnostics["warning_code"] == "EMBEDDING_ACCOUNT_UNAVAILABLE"
+    assert diagnostics["outcome"] == "candidates"
+    response = client.post("/v1/chat", json={"question": "贵州茅台有哪些经营风险？"})
+    body = response.json()
+    assert body["tool_calls"][0]["status"] == "degraded"
+    assert body["citations"]
+    assert "降级为关键词检索" in body["answer"]
+
+
+def test_financial_answer_identifies_demo_data():
+    response = client.post("/v1/chat", json={"question": "贵州茅台2025H1营收"})
+    assert response.status_code == 200
+    assert "【演示数据】" in response.json()["answer"]
+
+
 @pytest.fixture(autouse=True)
 def use_local_planner(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tests stay free and deterministic even when a local .env has a DeepSeek key."""
     monkeypatch.setattr(main, "planner", LocalResearchPlanner())
+    from dataclasses import replace
+    from app.evidence import EvidenceChecker
+    monkeypatch.setattr(main, "evidence_checker", EvidenceChecker(replace(main.settings, deepseek_api_key=None)))
 
 
 @pytest.fixture
@@ -141,7 +226,7 @@ def test_chat_stream_reports_progress_and_completes() -> None:
     assert "event: completed" in response.text
 
 
-def test_chat_uses_knowledge_search_for_risk_question(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_chat_uses_knowledge_search_for_risk_question(monkeypatch: pytest.MonkeyPatch, knowledge_storage) -> None:
     expected_citation = {
         "document_id": "document-001",
         "title": "贵州茅台公开报告",
@@ -149,12 +234,14 @@ def test_chat_uses_knowledge_search_for_risk_question(monkeypatch: pytest.Monkey
         "company_name": "贵州茅台",
         "document_type": "annual_report",
         "published_at": "2025-08-20",
+        "report_year": None,
         "page_number": 18,
         "chunk_id": "document-001:18:0",
         "excerpt": "公司经营面临原材料价格波动等风险。",
         "score": 2,
     }
-    monkeypatch.setattr(main, "search_knowledge", lambda **_kwargs: [expected_citation])
+    from app.models import Citation
+    monkeypatch.setattr(tool_module, "search_knowledge", lambda **_kwargs: [Citation.model_validate(expected_citation)])
 
     response = client.post("/v1/chat", json={"question": "贵州茅台有哪些经营风险？"})
 
@@ -164,6 +251,7 @@ def test_chat_uses_knowledge_search_for_risk_question(monkeypatch: pytest.Monkey
         "intent": "search_knowledge",
         "query": "贵州茅台有哪些经营风险？",
         "company_code": "600519",
+        "report_year": None,
     }
     assert body["results"] == []
     assert body["tool_calls"][0]["tool_name"] == "search_knowledge"
@@ -175,7 +263,7 @@ def test_chat_uses_knowledge_search_for_risk_question(monkeypatch: pytest.Monkey
 def test_chat_returns_safe_answer_when_knowledge_search_is_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(main, "search_knowledge", lambda **_kwargs: [])
+    monkeypatch.setattr(tool_module, "search_knowledge", lambda **_kwargs: [])
 
     response = client.post("/v1/chat", json={"question": "公告中提到了哪些风险？"})
 
@@ -188,7 +276,7 @@ def test_chat_returns_safe_answer_when_knowledge_search_is_empty(
 
 
 def test_chat_stream_reports_knowledge_retrieval_stage(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(main, "search_knowledge", lambda **_kwargs: [])
+    monkeypatch.setattr(tool_module, "search_knowledge", lambda **_kwargs: [])
 
     response = client.post("/v1/chat/stream", json={"question": "公告中提到了哪些风险？"})
 
@@ -276,6 +364,11 @@ def test_pdf_ingestion_rejects_duplicate_document(
     }
     knowledge.ingest_pdf_document(**ingestion_arguments)
 
+    def unexpected_call(*_args, **_kwargs):
+        pytest.fail("A duplicate upload must not parse the PDF or request embeddings")
+
+    monkeypatch.setattr(knowledge, "extract_pdf_pages", unexpected_call)
+    monkeypatch.setattr(knowledge, "_resolve_embedding_provider", unexpected_call)
     with pytest.raises(ValueError, match="DOCUMENT_ALREADY_EXISTS"):
         knowledge.ingest_pdf_document(**ingestion_arguments)
 
@@ -382,3 +475,109 @@ def test_rebuild_embeddings_adds_vectors_to_existing_chunks(
     assert count == 1
     assert index["chunks"][0]["embedding_provider"] == "semantic_fixture"
     assert index["chunks"][0]["embedding"] == [1.0, 0.0]
+
+
+@pytest.mark.parametrize("company_code", ["600519", "300750", "002594"])
+def test_search_api_isolates_company_among_three_ingested_reports(
+    monkeypatch: pytest.MonkeyPatch, knowledge_storage, company_code: str
+) -> None:
+    for code, name in [("600519", "贵州茅台"), ("300750", "宁德时代"), ("002594", "比亚迪")]:
+        content = make_text_pdf_bytes(monkeypatch, [f"{name}公开报告：经营风险包括供应链波动。"])
+        knowledge.ingest_pdf_document(
+            file_name=f"{name}.pdf", file_content=content + code.encode(),
+            company_code=code, company_name=name, document_type="annual_report",
+            published_at=None,
+        )
+    response = client.post(
+        "/v1/knowledge/search",
+        json={"query": "经营风险", "company_code": company_code, "limit": 3},
+    )
+    assert response.status_code == 200
+    citations = response.json()["citations"]
+    assert len(citations) == 1
+    assert citations[0]["company_code"] == company_code
+    assert citations[0]["company_name"] in citations[0]["excerpt"]
+
+
+def test_search_api_does_not_use_other_company_when_requested_company_is_absent(
+    monkeypatch: pytest.MonkeyPatch, knowledge_storage
+) -> None:
+    content = make_text_pdf_bytes(monkeypatch, ["公司经营风险包括供应链波动。"])
+    knowledge.ingest_pdf_document(
+        file_name="报告.pdf", file_content=content, company_code="600519",
+        company_name="贵州茅台", document_type="annual_report", published_at=None,
+    )
+    response = client.post(
+        "/v1/knowledge/search",
+        json={"query": "经营风险", "company_code": "000001", "limit": 3},
+    )
+    assert response.status_code == 200
+    assert response.json()["citations"] == []
+
+
+@pytest.mark.parametrize("use_vectors", [False, True])
+def test_report_year_filters_before_scoring_and_is_not_publication_year(
+    monkeypatch: pytest.MonkeyPatch, knowledge_storage, use_vectors
+) -> None:
+    if use_vectors:
+        monkeypatch.setattr(knowledge, "_resolve_embedding_provider", lambda supplied: SemanticFixtureEmbeddingProvider())
+    for year in (2023, 2024, None):
+        content = make_text_pdf_bytes(monkeypatch, [f"经营风险：报告所属年份标记 {year}。"])
+        response = client.post(
+            "/v1/documents",
+            files={"file": (f"report-{year}.pdf", content + str(year).encode(), "application/pdf")},
+            data={"company_code": "600519", "company_name": "贵州茅台",
+                  "document_type": "annual_report", "published_at": "2025-04-03",
+                  **({"report_year": str(year)} if year else {})},
+        )
+        assert response.status_code == 201
+        assert response.json()["document"]["report_year"] == year
+
+    for year in (2023, 2024):
+        response = client.post("/v1/knowledge/search", json={
+            "query": "经营风险", "company_code": "600519", "report_year": year,
+        })
+        assert response.status_code == 200
+        citations = response.json()["citations"]
+        assert len(citations) == 1
+        assert citations[0]["report_year"] == year
+        assert str(year) in citations[0]["excerpt"]
+        assert citations[0]["published_at"] == "2025-04-03"
+
+    # Unspecified year remains backward compatible, including legacy metadata.
+    all_results = client.post("/v1/knowledge/search", json={
+        "query": "经营风险", "company_code": "600519",
+    }).json()["citations"]
+    assert len(all_results) == 3
+
+    def no_embedding(_provider):
+        pytest.fail("A missing report year should not spend embedding quota")
+
+    monkeypatch.setattr(knowledge, "_resolve_embedding_provider", no_embedding)
+    missing = client.post("/v1/knowledge/search", json={
+        "query": "经营风险", "company_code": "600519", "report_year": 2025,
+    })
+    assert missing.json()["citations"] == []
+
+
+@pytest.mark.parametrize("bad_year", [1899, 2100, "2024", 2024.5, True])
+def test_search_rejects_invalid_report_year(bad_year) -> None:
+    response = client.post("/v1/knowledge/search", json={
+        "query": "经营风险", "report_year": bad_year,
+    })
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("endpoint", ["/v1/chat", "/v1/chat/stream"])
+def test_chat_passes_report_year_to_retrieval(monkeypatch, endpoint):
+    captured = {}
+    def search(**kwargs):
+        captured.update(kwargs)
+        return []
+    monkeypatch.setattr(tool_module, "search_knowledge", search)
+    response = client.post(endpoint, json={
+        "question": "查询贵州茅台2025年发布的2024年年报经营风险",
+    })
+    assert response.status_code == 200
+    assert captured["report_year"] == 2024
+    assert captured["company_code"] == "600519"

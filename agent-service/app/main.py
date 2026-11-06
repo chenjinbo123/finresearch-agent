@@ -5,27 +5,36 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import date
 
-from fastapi import FastAPI, File, Form, UploadFile, status
+from fastapi import FastAPI, File, Form, Request, UploadFile, status
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.config import get_settings
+from app.errors import error_status, public_error
+from app.evidence import EvidenceChecker, evidence_answer
 from app.knowledge import ingest_pdf_document, search_knowledge
+from app.tools import tool_registry
+from app.tool_registry import ToolResult
+from app.market_models import MarketHistoryPlan
+from app.report_models import ReportFinancialPlan
+from starlette.concurrency import run_in_threadpool
 from app.models import (
     ChatRequest,
+    MarketHistoryResponse,
+    ReportFinancialResponse,
     ChatResponse,
+    Citation,
+    EvidenceAssessment,
     DocumentIngestionResponse,
     ErrorResponse,
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
+    RetrievalDiagnostics,
     ToolCallLog,
     ToolPlan,
 )
-from app.services import (
-    create_planner,
-    format_financial_research_answer,
-    format_knowledge_research_answer,
-    get_financial_metrics,
-)
+from app.services import create_planner
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,9 +46,55 @@ app = FastAPI(
     title="FinResearch Agent Service",
     version="0.1.0",
     description="First learning slice: validated financial-metrics tool calling.",
+    responses={code: {"model": ErrorResponse} for code in (400, 422, 500, 502, 503, 504)},
 )
 settings = get_settings()
 planner = create_planner(settings)
+evidence_checker = EvidenceChecker(settings)
+
+
+async def assess_chat_evidence(
+    question: str, plan: ToolPlan, citations: list[Citation], tool_call: ToolCallLog,
+    answer: str, request_id: str,
+) -> tuple[EvidenceAssessment | None, str]:
+    if not tool_registry.get(plan.intent).requires_evidence:
+        return None, answer
+    assessment = await evidence_checker.assess(question, citations)
+    answer = evidence_answer(assessment, citations)
+    if tool_call.retrieval and tool_call.retrieval.degraded:
+        answer = "向量服务暂不可用，本次已降级为关键词检索，可能遗漏语义相关资料。\n" + answer
+    logger.info("request_id=%s evidence_status=%s reason_code=%s", request_id,
+                assessment.status, assessment.reason_code)
+    return assessment, answer
+
+
+def error_response(error: Exception, request_id: str) -> JSONResponse:
+    body = public_error(error, request_id)
+    logger.info("request_id=%s status=failed error_code=%s", request_id, body.code)
+    return JSONResponse(status_code=error_status(body.code), content=body.model_dump(mode="json"))
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(_request: Request, error: RequestValidationError) -> JSONResponse:
+    invalid_json = any(item["type"] == "json_invalid" for item in error.errors())
+    body = ErrorResponse(
+        code="INVALID_JSON" if invalid_json else "VALIDATION_ERROR",
+        message="请求体不是合法 JSON，请检查引号、逗号和括号。" if invalid_json else "请求参数不合法，请按接口文档检查字段类型与范围。",
+        request_id=str(uuid.uuid4()),
+    )
+    return JSONResponse(status_code=422, content=body.model_dump(mode="json"))
+
+
+@app.exception_handler(HTTPException)
+async def http_error(_request: Request, error: HTTPException) -> JSONResponse:
+    body = ErrorResponse(code=f"HTTP_{error.status_code}", message="请求的接口不存在或不允许该操作。",
+                         request_id=str(uuid.uuid4()))
+    return JSONResponse(status_code=error.status_code, content=body.model_dump(mode="json"), headers=error.headers)
+
+
+@app.exception_handler(Exception)
+async def unexpected_error(_request: Request, error: Exception) -> JSONResponse:
+    return error_response(error, str(uuid.uuid4()))
 
 
 def sse_event(event: str, data: dict[str, object]) -> str:
@@ -47,34 +102,18 @@ def sse_event(event: str, data: dict[str, object]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def execute_plan(plan: ToolPlan, request_id: str) -> tuple[list, list, ToolCallLog, str]:
-    """Execute exactly one validated, allowlisted tool chosen by the planner."""
-    if plan.intent == "get_financial_metrics":
-        results, tool_call = get_financial_metrics(plan, request_id)
-        return results, [], tool_call, format_financial_research_answer(results)
-
-    citations = search_knowledge(query=plan.query, company_code=plan.company_code)
-    tool_call = ToolCallLog(
-        tool_name="search_knowledge",
-        arguments=plan,
-        status="success",
-        result_count=len(citations),
-    )
-    logger.info(
-        "request_id=%s tool=%s arguments=%s status=%s result_count=%s",
-        request_id,
-        tool_call.tool_name,
-        plan.model_dump_json(),
-        tool_call.status,
-        tool_call.result_count,
-    )
-    return [], citations, tool_call, format_knowledge_research_answer(len(citations))
+def execute_plan(plan: ToolPlan, request_id: str) -> tuple[ToolResult, ToolCallLog]:
+    return tool_registry.execute(plan, request_id)
 
 
 def tool_stage_message(plan: ToolPlan) -> str:
-    if plan.intent == "get_financial_metrics":
-        return "正在查询财务指标"
-    return "正在检索公开资料证据"
+    return tool_registry.get(plan.intent).progress_message
+
+
+@app.get("/v1/tools")
+async def list_tools() -> dict:
+    """Read-only catalog; handlers and credentials are never exposed."""
+    return {"tools": tool_registry.describe()}
 
 
 @app.get("/health")
@@ -94,6 +133,9 @@ async def ingest_document(
     company_name: str | None = Form(default=None),
     document_type: str = Form(default="other"),
     published_at: date | None = Form(default=None),
+    report_year: int | None = Form(
+        default=None, ge=1900, le=2099, description="报告所属年份，不是发布日期年份，例如 2024"
+    ),
 ) -> DocumentIngestionResponse | JSONResponse:
     """Ingest one public PDF into the local, page-aware knowledge index."""
     request_id = str(uuid.uuid4())
@@ -106,13 +148,10 @@ async def ingest_document(
             company_name=company_name,
             document_type=document_type,
             published_at=published_at,
+            report_year=report_year,
         )
     except ValueError as error:
-        code, message = str(error).split(":", maxsplit=1)
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"code": code, "message": message.strip(), "request_id": request_id},
-        )
+        return error_response(error, request_id)
     return DocumentIngestionResponse(request_id=request_id, document=document)
 
 
@@ -126,18 +165,17 @@ async def knowledge_search(
 ) -> KnowledgeSearchResponse | JSONResponse:
     """Search uploaded document chunks and return only original source excerpts."""
     request_id = str(uuid.uuid4())
+    diagnostics = RetrievalDiagnostics()
     try:
         citations = search_knowledge(
-            query=request.query, company_code=request.company_code, limit=request.limit
+            query=request.query, company_code=request.company_code, limit=request.limit,
+            report_year=request.report_year,
+            diagnostics=diagnostics,
         )
     except ValueError as error:
-        code, message = str(error).split(":", maxsplit=1)
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"code": code, "message": message.strip(), "request_id": request_id},
-        )
+        return error_response(error, request_id)
     return KnowledgeSearchResponse(
-        request_id=request_id, query=request.query, citations=citations
+        request_id=request_id, query=request.query, citations=citations, retrieval=diagnostics
     )
 
 
@@ -153,29 +191,26 @@ async def chat(request: ChatRequest) -> ChatResponse | JSONResponse:
 
     try:
         plan = await planner.create_plan(request.question)
-        results, citations, tool_call, answer = execute_plan(plan, request_id)
-    except ValueError as error:
-        code, message = str(error).split(":", maxsplit=1)
-        logger.info(
-            "request_id=%s status=failed error_code=%s question=%r",
-            request_id,
-            code,
-            request.question,
+        result, tool_call = await run_in_threadpool(execute_plan, plan, request_id)
+        results, citations, answer = result.results, result.citations, result.answer
+        evidence, answer = await assess_chat_evidence(
+            request.question, plan, citations, tool_call, answer, request_id,
         )
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"code": code, "message": message.strip(), "request_id": request_id},
-        )
+    except Exception as error:
+        return error_response(error, request_id)
 
     latency_ms = round((time.perf_counter() - started_at) * 1000)
     return ChatResponse(
         request_id=request_id,
         planner=planner.planner_name,
-        plan=plan,
+        plan=plan.model_dump(mode="json"),
         results=results,
         citations=citations,
         answer=answer,
         tool_calls=[tool_call],
+        evidence=evidence,
+        market_data=result.market_data,
+        financial_data=result.financial_data,
         latency_ms=latency_ms,
     )
 
@@ -202,29 +237,31 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                     "message": tool_stage_message(plan),
                 },
             )
-            results, citations, tool_call, answer = execute_plan(plan, request_id)
-        except ValueError as error:
-            code, message = str(error).split(":", maxsplit=1)
-            logger.info(
-                "request_id=%s status=failed error_code=%s question=%r",
-                request_id,
-                code,
-                request.question,
+            result, tool_call = await run_in_threadpool(execute_plan, plan, request_id)
+            results, citations, answer = result.results, result.citations, result.answer
+            if tool_registry.get(plan.intent).requires_evidence:
+                yield sse_event("status", {"request_id": request_id, "stage": "evidence_check",
+                                          "message": "正在核对原文是否足以回答问题"})
+            evidence, answer = await assess_chat_evidence(
+                request.question, plan, citations, tool_call, answer, request_id,
             )
-            yield sse_event(
-                "error",
-                {"request_id": request_id, "code": code, "message": message.strip()},
-            )
+        except Exception as error:
+            body = public_error(error, request_id)
+            logger.info("request_id=%s status=failed error_code=%s", request_id, body.code)
+            yield sse_event("error", body.model_dump(mode="json"))
             return
 
         response = ChatResponse(
             request_id=request_id,
             planner=planner.planner_name,
-            plan=plan,
+            plan=plan.model_dump(mode="json"),
             results=results,
             citations=citations,
             answer=answer,
             tool_calls=[tool_call],
+            evidence=evidence,
+            market_data=result.market_data,
+            financial_data=result.financial_data,
             latency_ms=round((time.perf_counter() - started_at) * 1000),
         )
         yield sse_event(
@@ -238,3 +275,25 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.post("/v1/market/history", response_model=MarketHistoryResponse)
+async def market_history(request: MarketHistoryPlan) -> MarketHistoryResponse | JSONResponse:
+    """Direct validated historical-data query; no planner/model cost."""
+    request_id = str(uuid.uuid4())
+    try:
+        result, log = await run_in_threadpool(execute_plan, request, request_id)
+        return MarketHistoryResponse(request_id=request_id, market_data=result.market_data, tool_calls=[log])
+    except Exception as error:
+        return error_response(error, request_id)
+
+
+@app.post("/v1/financials/report", response_model=ReportFinancialResponse)
+async def report_financials(request: ReportFinancialPlan) -> ReportFinancialResponse | JSONResponse:
+    """Read real reported financials directly without a model planning call."""
+    request_id = str(uuid.uuid4())
+    try:
+        result, log = await run_in_threadpool(execute_plan, request, request_id)
+        return ReportFinancialResponse(request_id=request_id, financial_data=result.financial_data, tool_calls=[log])
+    except Exception as error:
+        return error_response(error, request_id)

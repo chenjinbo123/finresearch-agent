@@ -2,6 +2,7 @@ import csv
 import json
 import logging
 import math
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
@@ -11,6 +12,10 @@ import httpx
 from app.config import Settings
 from app.models import FinancialMetric, FinancialMetricsPlan, KnowledgeSearchPlan, ToolCallLog, ToolPlan
 from app.prompts import FINANCIAL_PLANNER_SYSTEM_PROMPT
+from app.market_planner import market_plan_from_question
+from app.market_models import MarketHistoryPlan
+from app.report_planner import report_plan_from_question
+from app.report_models import ReportFinancialPlan
 
 logger = logging.getLogger("finresearch.agent.tool")
 
@@ -136,12 +141,35 @@ def load_financial_metrics() -> dict[tuple[str, str, str], FinancialMetric]:
     return metrics
 
 
+def explicit_report_year(question: str) -> int | None:
+    """Extract an explicitly named report year, never its publication date."""
+    shared = re.search(
+        r"((?:19|20)\d{2})\s*年?\s*(?:和|与|、|至|到|-)\s*((?:19|20)\d{2})\s*年?\s*(?:年度报告|年报)",
+        question,
+    )
+    if shared and shared[1] != shared[2]:
+        raise ValueError("MULTIPLE_REPORT_YEARS: 当前每次只能检索一个报告年份，请分别提问。")
+    years = set(re.findall(
+        r"(?<!\d)((?:19|20)\d{2})\s*年?\s*(?:年度报告|年报|半年度报告|半年报|季度报告|季报)",
+        question,
+    ))
+    if len(years) > 1:
+        raise ValueError("MULTIPLE_REPORT_YEARS: 当前每次只能检索一个报告年份，请分别提问。")
+    return int(next(iter(years))) if years else None
+
+
 class LocalResearchPlanner:
     """Deterministic planner used in offline learning and automated tests."""
 
     planner_name = "local_rule"
 
     async def create_plan(self, question: str) -> ToolPlan:
+        market_plan = market_plan_from_question(question)
+        if market_plan is not None:
+            return market_plan
+        report_plan = report_plan_from_question(question)
+        if report_plan is not None:
+            return report_plan
         company_codes = [code for name, code in COMPANIES.items() if name in question]
         metric_codes = list(dict.fromkeys(code for name, code in METRICS.items() if name in question))
         if metric_codes:
@@ -160,6 +188,7 @@ class LocalResearchPlanner:
             intent="search_knowledge",
             query=question,
             company_code=company_codes[0] if len(company_codes) == 1 else None,
+            report_year=explicit_report_year(question),
         )
 
 
@@ -184,6 +213,8 @@ class DeepSeekResearchPlanner:
         self._settings = settings
 
     async def create_plan(self, question: str) -> ToolPlan:
+        market_constraints = market_plan_from_question(question)
+        report_constraints = report_plan_from_question(question)
         payload = {
             "model": self._settings.deepseek_model,
             "messages": [
@@ -217,9 +248,24 @@ class DeepSeekResearchPlanner:
 
         try:
             content = response.json()["choices"][0]["message"]["content"]
-            return validate_tool_plan(json.loads(content))
+            plan = validate_tool_plan(json.loads(content))
+            if report_constraints is not None:
+                return report_constraints
+            if isinstance(plan, ReportFinancialPlan):
+                raise ValueError("真实财报查询需明确真实数据模式")
+            if market_constraints is not None:
+                return market_constraints
+            if isinstance(plan, MarketHistoryPlan):
+                return market_plan_from_question(question, force=True)
+            if isinstance(plan, KnowledgeSearchPlan):
+                year = explicit_report_year(question)
+                if year is not None:
+                    # Preserve explicit user constraints even if the model omitted
+                    # the year while shortening the query into search keywords.
+                    plan = plan.model_copy(update={"report_year": year})
+            return plan
         except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValueError) as error:
-            logger.warning("deepseek_invalid_plan=%r", response.text[:500])
+            logger.warning("deepseek_invalid_plan error_type=%s", type(error).__name__)
             raise ValueError("PLANNER_INVALID_OUTPUT: 模型未返回合法的查询计划，请重试。") from error
 
 
@@ -232,14 +278,9 @@ def create_planner(settings: Settings) -> ResearchPlanner:
 
 def validate_tool_plan(value: object) -> ToolPlan:
     """Validate that a planner chose exactly one tool from the fixed allowlist."""
-    if not isinstance(value, dict):
-        raise ValueError("PLANNER_INVALID_OUTPUT: 模型未返回 JSON 对象。")
-    intent = value.get("intent")
-    if intent == "get_financial_metrics":
-        return FinancialMetricsPlan.model_validate(value)
-    if intent == "search_knowledge":
-        return KnowledgeSearchPlan.model_validate(value)
-    raise ValueError("PLANNER_INVALID_OUTPUT: 模型选择了不支持的工具。")
+    # Lazy import keeps tool adapters independent from planner initialization.
+    from app.tools import tool_registry
+    return tool_registry.parse(value)
 
 
 def get_financial_metrics(
@@ -286,7 +327,8 @@ def format_financial_research_answer(results: list[FinancialMetric]) -> str:
     for metric in results:
         company_metrics.setdefault(metric.company_name, []).append(metric)
 
-    summary_lines = [f"已查询到 {results[0].report_period} 的结构化财务数据："]
+    summary_lines = ["【演示数据】以下数字来自本地示例数据集，不代表已核验的真实财务结果。",
+                     f"已查询到 {results[0].report_period} 的结构化财务数据："]
     for company_name, metrics in company_metrics.items():
         metric_text = "；".join(
             f"{metric.metric_name} {metric.metric_value / 100_000_000:,.2f} 亿元"
@@ -309,4 +351,4 @@ def format_knowledge_research_answer(citation_count: int) -> str:
     """Describe retrieval status without letting the model invent a conclusion."""
     if citation_count == 0:
         return "现有资料不足以确认：在已入库的公开资料中未检索到相关原文证据。"
-    return f"已检索到 {citation_count} 条相关公开资料原文，请结合下方引用中的页码和原文片段复核。"
+    return f"已检索到 {citation_count} 条候选公开资料原文，请结合下方引用中的页码和原文片段复核。候选片段不代表已经充分回答问题。"
